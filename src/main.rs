@@ -13,7 +13,7 @@ use itertools::Itertools;
 use std::{
     collections::BTreeMap,
     env, fs,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::Path,
     process,
 };
@@ -669,7 +669,7 @@ fn run(cli: &Cli) -> Result<()> {
         } => {
             let acts_on = to_acts_on(pod_or_service, true);
             let mut opts = cage::args::opts::Pull::default();
-            opts.quiet = *quiet;
+            opts.quiet = *quiet || !io::stderr().is_terminal();
             proj.pull(&runner, &acts_on, &opts)?;
         }
         Commands::Build { pod_or_service } => {

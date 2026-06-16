@@ -112,6 +112,8 @@ impl CommandRun for Project {
             .build("docker-compose")
             .args(&pod.compose_args(self)?)
             .arg("run")
+            .arg("--pull")
+            .arg("never")
             .arg("--name")
             .arg(&container_name)
             .arg("--no-deps")
@@ -205,6 +207,8 @@ fn runs_tests() {
             "-f",
             proj.output_pods_dir().join("frontend.yml"),
             "run",
+            "--pull",
+            "never",
             "--name",
             &container_name,
             "--no-deps",
@@ -242,6 +246,8 @@ fn runs_tests_with_custom_command() {
             "-f",
             proj.output_pods_dir().join("frontend.yml"),
             "run",
+            "--pull",
+            "never",
             "--name",
             &container_name,
             "--no-deps",
@@ -281,6 +287,8 @@ fn runs_tests_and_extracts_output() {
             "-f",
             proj.output_pods_dir().join("frontend.yml"),
             "run",
+            "--pull",
+            "never",
             "--name",
             &container_name,
             "--no-deps",

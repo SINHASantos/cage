@@ -1,7 +1,7 @@
 //! Utilities for running and testing shell commands.
 
 use std::ffi::{OsStr, OsString};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::marker::PhantomData;
 use std::path::Path;
 use std::process::{self, Stdio};
@@ -100,8 +100,12 @@ impl CommandRunner for OsCommandRunner {
 
     fn build<S: AsRef<OsStr>>(&self, program: S) -> Self::Command {
         let program = program.as_ref();
+        let mut command = process::Command::new(program);
+        if program == "docker-compose" && !io::stderr().is_terminal() {
+            command.env("COMPOSE_PROGRESS", "quiet");
+        }
         OsCommand {
-            command: process::Command::new(program),
+            command,
             arg_log: vec![program.to_owned()],
         }
     }

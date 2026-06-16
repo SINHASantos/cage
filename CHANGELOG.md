@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## Unreleased
 
+## 0.4.1-pre4 - 2026-06-16
+
+### Changed
+
+- When stderr is not a terminal (e.g. GitHub Actions), set `COMPOSE_PROGRESS=quiet` on all `docker-compose` invocations so implicit image pulls during `run`/`test` do not spam layer download progress.
+- `cage pull` now defaults to `--quiet` when stderr is not a terminal.
+- `cage test` passes `--pull never` to `docker-compose run` so tests use the already-pulled image instead of re-pulling with verbose progress.
+
 ## 0.4.1-pre3 - 2026-05-14
 
 ### Fixed
