@@ -330,7 +330,7 @@ impl Source {
         } else {
             Err(anyhow::anyhow!(
                 "'{}' is not a git repository",
-                &self.context
+                self.context
             ))
         }
     }

@@ -299,7 +299,7 @@ fn runs_tests_and_extracts_output() {
         [
             "docker",
             "cp",
-            format!("{}:./test_output", &container_name),
+            format!("{}:./test_output", container_name),
             "examples/hello/test_output",
         ],
         [

@@ -68,7 +68,7 @@ impl DefaultTags {
             // Already tagged, so assume the user knows what they're doing.
             image.to_owned()
         } else if let Some(default) = self.tags.get(image) {
-            debug!("Defaulting {} to {}", image, &default);
+            debug!("Defaulting {} to {}", image, default);
             default.to_owned()
         } else {
             // If we have a list of default tags, but it doesn't

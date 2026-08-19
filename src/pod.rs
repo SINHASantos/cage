@@ -280,7 +280,7 @@ impl Pod {
         let name = name.into();
 
         // Load our `*.metadata.yml` file, if any.
-        let config_path = base_dir.join(format!("{}.metadata.yml", &name));
+        let config_path = base_dir.join(format!("{}.metadata.yml", name));
         let config: Config = if config_path.exists() {
             load_yaml(&config_path)?
         } else {
@@ -288,7 +288,7 @@ impl Pod {
         };
 
         // Load our main `*.yml` file.
-        let rel_path = Path::new(&format!("{}.yml", &name)).to_owned();
+        let rel_path = Path::new(&format!("{}.yml", name)).to_owned();
         let mut file_info = FileInfo::unnormalized(&base_dir, &rel_path)?;
         file_info.finish_normalization();
         let service_names = file_info.file.services.keys().cloned().collect();
@@ -297,7 +297,7 @@ impl Pod {
         let mut target_infos = BTreeMap::new();
         for target in targets {
             let target_rel_path =
-                Path::new(&format!("targets/{}/{}.yml", target.name(), &name))
+                Path::new(&format!("targets/{}/{}.yml", target.name(), name))
                     .to_owned();
             let mut target_info = FileInfo::unnormalized(&base_dir, &target_rel_path)?;
             target_info.ensure_same_services(&rel_path, &service_names)?;

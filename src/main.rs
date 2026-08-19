@@ -923,7 +923,7 @@ fn main() {
 
     // Parse our command-line arguments.
     let cli = Cli::parse();
-    debug!("Arguments: {:?}", &cli);
+    debug!("Arguments: {:?}", cli);
 
     // Defer all our real work to `run`, and handle any errors.  This is a
     // standard Rust pattern to make error-handling in `main` nicer.

@@ -108,7 +108,7 @@ impl Template {
     where
         T: Serialize + fmt::Debug,
     {
-        debug!("Generating {} with {:?}", &self.name, data);
+        debug!("Generating {} with {:?}", self.name, data);
         for (rel_path, tmpl) in &self.files {
             let path = target_dir.join(rel_path);
             debug!("Output {}", path.display());

@@ -229,6 +229,6 @@ impl fmt::Debug for Manager {
         names.extend_from_slice(
             &self.transforms.iter().map(|p| p.name()).collect::<Vec<_>>(),
         );
-        write!(f, "plugins::Manager {{ {:?} }}", &names)
+        write!(f, "plugins::Manager {{ {:?} }}", names)
     }
 }

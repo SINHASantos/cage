@@ -151,14 +151,14 @@ impl Command for OsCommand {
     }
 
     fn status(&mut self) -> Result<process::ExitStatus> {
-        debug!("Running {:?}", &self.arg_log);
+        debug!("Running {:?}", self.arg_log);
         self.command.status().map_err(|e| {
             anyhow::Error::new(e).context(Error::CommandFailed(self.arg_log.clone()))
         })
     }
 
     fn exec_capturing(&mut self, label: &str) -> Result<()> {
-        debug!("Running (capturing) {:?}", &self.arg_log);
+        debug!("Running (capturing) {:?}", self.arg_log);
         self.command.stdout(Stdio::piped()).stderr(Stdio::piped());
         let output = self.command.output().map_err(|e| {
             anyhow::Error::new(e).context(Error::CommandFailed(self.arg_log.clone()))

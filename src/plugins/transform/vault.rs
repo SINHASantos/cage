@@ -699,7 +699,7 @@ impl PluginTransform for Plugin {
             }
             debug!(
                 "Generating token for '{}' with policies {:?}",
-                name, &policies
+                name, policies
             );
 
             // Insert our VAULT_ADDR value into the generated files.

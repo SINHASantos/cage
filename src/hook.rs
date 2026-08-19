@@ -53,7 +53,7 @@ impl HookManager {
             debug!(
                 "No hooks for '{}' because {} does not exist",
                 hook_name,
-                &d_dir.display()
+                d_dir.display()
             );
             return Ok(());
         }
