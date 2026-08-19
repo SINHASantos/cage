@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## Unreleased
 
+## 0.4.1-pre5 - 2026-08-19
+
+### Changed
+
+- Updated Rust dependencies, including `itertools` 0.14 → 0.15.
+- Replaced the unmaintained `hashicorp_vault` client with `vaultrs` 0.8.
+
+### Fixed
+
+- Retry transient Vault HTTP errors (connection reset, timeout) when issuing
+  service tokens. GitHub Actions runners reset connections to Vault often
+  enough that a single `lookup-self` was failing `cage pull`.
+
 ## 0.4.1-pre4 - 2026-06-16
 
 ### Changed

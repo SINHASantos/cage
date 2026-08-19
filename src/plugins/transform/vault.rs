@@ -1,6 +1,7 @@
 //! Plugin which issues vault tokens to services.
 
 use faraday_compose_yml::v2 as dc;
+use retry::{delay, retry, OperationResult};
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     env,
@@ -11,7 +12,11 @@ use std::{
     result,
     time::{Duration, SystemTime},
 };
-use vault::client::VaultDuration;
+use thiserror::Error;
+use vaultrs::{
+    api::token::requests::CreateTokenRequest, client::VaultClientSettingsBuilder,
+    error::ClientError,
+};
 
 use crate::errors::*;
 use crate::plugins;
@@ -274,24 +279,95 @@ struct Vault {
     token: String,
 }
 
+/// A failed attempt to talk to a Vault server.
+#[derive(Debug, Error)]
+enum VaultRequestError {
+    #[error("{0}")]
+    Unreachable(String),
+    #[error("{0}")]
+    Rejected(String),
+    #[error("{0}")]
+    Other(String),
+}
+
+impl VaultRequestError {
+    fn from_client_error(error: ClientError) -> VaultRequestError {
+        match error {
+            ClientError::RestClientError { source } => {
+                VaultRequestError::Unreachable(source.to_string())
+            }
+            ClientError::APIError { code, errors } => VaultRequestError::Rejected(
+                format!("vault returned {}: {}", code, errors.join(", ")),
+            ),
+            other => VaultRequestError::Other(other.to_string()),
+        }
+    }
+
+    fn is_transient(&self) -> bool {
+        matches!(self, VaultRequestError::Unreachable(_))
+    }
+}
+
 impl Vault {
-    /// Create a new vault client.
     fn new() -> Result<Vault> {
-        let mut addr = env::var("VAULT_ADDR").map_err(|_| {
+        let addr = env::var("VAULT_ADDR").map_err(|_| {
             err(
                 "Please set the environment variable VAULT_ADDR to the URL of \
                  your vault server",
             )
         })?;
-        // TODO MED: Temporary fix because of broken URL handling in
-        // hashicorp_vault.  Upstream bug:
-        // https://github.com/ChrisMacNaughton/vault-rs/issues/14
-        if addr.ends_with('/') {
-            let new_len = addr.len() - 1;
-            addr.truncate(new_len);
-        }
+        url::Url::parse(&addr).map_err(|parse_error| {
+            err!("VAULT_ADDR {:?} is not a valid URL: {}", addr, parse_error)
+        })?;
         let token = find_vault_token()?;
         Ok(Vault { addr, token })
+    }
+
+    #[cfg(test)]
+    fn new_for_test() -> Vault {
+        Vault {
+            addr: "http://example.com:8200".to_owned(),
+            token: "test".to_owned(),
+        }
+    }
+
+    fn client(
+        &self,
+    ) -> std::result::Result<vaultrs::client::VaultClient, VaultRequestError> {
+        let settings = VaultClientSettingsBuilder::default()
+            .address(&self.addr)
+            .token(&self.token)
+            .timeout(Some(Duration::from_secs(30)))
+            .build()
+            .map_err(|build_error| {
+                VaultRequestError::Other(build_error.to_string())
+            })?;
+        vaultrs::client::VaultClient::new(settings)
+            .map_err(VaultRequestError::from_client_error)
+    }
+
+    fn retry_vault_call<Output>(
+        &self,
+        mut call: impl FnMut() -> std::result::Result<Output, VaultRequestError>,
+    ) -> Result<Output> {
+        retry(
+            delay::Exponential::from_millis(200).take(4),
+            || match call() {
+                Ok(output) => OperationResult::Ok(output),
+                Err(error) if error.is_transient() => {
+                    warn!("transient vault error, retrying: {}", error);
+                    OperationResult::Retry(error)
+                }
+                Err(error) => OperationResult::Err(error),
+            },
+        )
+        .map_err(|retry_error| {
+            anyhow::anyhow!(
+                "{}: {}",
+                Error::VaultError(self.addr.clone()),
+                retry_error.error
+            )
+        })
     }
 }
 
@@ -306,25 +382,42 @@ impl GenerateToken for Vault {
         policies: &BTreeSet<String>,
         ttl: Duration,
     ) -> Result<TokenInfo> {
-        // We can't store `client` in `self`, because it has some obnoxious
-        // lifetime parameters.  So we'll just recreate it.  This is
-        // probably not the worst idea, because it uses `hyper` for HTTP,
-        // and `hyper` HTTP connections used to have expiration issues that
-        // were tricky for clients to deal with correctly.
-        let client = vault::Client::new(&self.addr[..], &self.token).map_err(|e| {
-            anyhow::anyhow!("{}: {}", Error::VaultError(self.addr.clone()), e)
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|runtime_error| {
+                anyhow::anyhow!(
+                    "{}: {}",
+                    Error::VaultError(self.addr.clone()),
+                    runtime_error
+                )
+            })?;
+        let client = self.client().map_err(|client_error| {
+            anyhow::anyhow!(
+                "{}: {}",
+                Error::VaultError(self.addr.clone()),
+                client_error
+            )
         })?;
-        let opts = vault::client::TokenOptions::default()
-            .display_name(display_name)
-            .renewable(true)
-            .ttl(VaultDuration(ttl))
-            .policies(policies.clone());
-        let auth = client.create_token(&opts).map_err(|e| {
-            anyhow::anyhow!("{}: {}", Error::VaultError(self.addr.clone()), e)
+        let auth = self.retry_vault_call(|| {
+            runtime
+                .block_on(vaultrs::token::new(
+                    &client,
+                    Some(
+                        CreateTokenRequest::builder()
+                            .display_name(display_name)
+                            .renewable(true)
+                            .ttl(format!("{}s", ttl.as_secs()))
+                            .policies(policies.iter().cloned().collect::<Vec<_>>()),
+                    ),
+                ))
+                .map_err(VaultRequestError::from_client_error)
         })?;
-        let lease_duration = auth
-            .lease_duration
-            .map_or_else(|| Duration::from_secs(30 * 24 * 60 * 60), |d| d.0);
+        let lease_duration = if auth.lease_duration == 0 {
+            Duration::from_secs(DEFAULT_TTL)
+        } else {
+            Duration::from_secs(auth.lease_duration)
+        };
         let expires = SystemTime::now() + lease_duration;
         Ok(TokenInfo {
             token: auth.client_token,
@@ -817,5 +910,52 @@ mod test {
             .unwrap();
         let web = file.services.get("web").unwrap();
         assert_eq!(web.environment.get("VAULT_ADDR"), None);
+    }
+
+    #[test]
+    fn connection_reset_is_transient() {
+        assert!(
+            VaultRequestError::Unreachable("Connection reset by peer".to_owned())
+                .is_transient()
+        );
+    }
+
+    #[test]
+    fn vault_api_error_is_not_transient() {
+        assert!(!VaultRequestError::Rejected("permission denied".to_owned())
+            .is_transient());
+    }
+
+    #[test]
+    fn retries_transient_vault_errors() {
+        let mut attempts = 0;
+        assert_eq!(
+            Vault::new_for_test()
+                .retry_vault_call(|| {
+                    attempts += 1;
+                    if attempts < 3 {
+                        Err(VaultRequestError::Unreachable(
+                            "Connection reset by peer".to_owned(),
+                        ))
+                    } else {
+                        Ok(42)
+                    }
+                })
+                .unwrap(),
+            42
+        );
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn does_not_retry_vault_api_errors() {
+        let mut attempts = 0;
+        assert!(Vault::new_for_test()
+            .retry_vault_call(|| -> std::result::Result<i32, VaultRequestError> {
+                attempts += 1;
+                Err(VaultRequestError::Rejected("permission denied".to_owned()))
+            })
+            .is_err());
+        assert_eq!(attempts, 1);
     }
 }
